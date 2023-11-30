@@ -1,3 +1,4 @@
+using BusinessLogic;
 using BusinessLogic.Interfaces;
 using BusinessLogic.Services;
 using Common;
@@ -38,6 +39,8 @@ builder.Services.AddScoped<IDbInitializeService, DbInitializeService>();
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
 builder.Services.AddScoped<MustBeOrderOwnerFilter>();
 builder.Services.AddScoped<MustBeOrderListOwnerFilter>();
+builder.Services.AddScoped<ServiceErrorWrapper>();
+
 builder.Services.AddHostedService<BitcoinSimulatorService>();
 
 var authOptions = builder.Configuration.GetSection("Auth").Get<AuthOptions>();
