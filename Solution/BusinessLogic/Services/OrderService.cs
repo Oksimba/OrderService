@@ -1,5 +1,4 @@
-﻿using AutoMapper;
-using BusinessLogic.Interfaces;
+﻿using BusinessLogic.Interfaces;
 using DataAccess;
 using Entities;
 using Microsoft.Extensions.Logging;
@@ -9,13 +8,16 @@ namespace BusinessLogic.Services
     public class OrderService : IOrderService
     {
         UnitOfWork _unitOfWork;
-        IMapper _mapper;
         ILogger<OrderService> _logger;
-        public OrderService(UnitOfWork unitOfWork, IMapper mapper, ILogger<OrderService> logger)
+        ServiceErrorWrapper _errorWrapper;
+        string _entityName = nameof(Order);
+        string _servicName = nameof(OrderService);
+
+        public OrderService(UnitOfWork unitOfWork, ILogger<OrderService> logger, ServiceErrorWrapper errorWrapper)
         {
             _unitOfWork = unitOfWork;
-            _mapper = mapper;
             _logger = logger;
+            this._errorWrapper = errorWrapper;
         }
         public IEnumerable<Order> GetAll(int userId)
         {
@@ -28,74 +30,76 @@ namespace BusinessLogic.Services
             return _unitOfWork.OrderRepository.Get(id);
         }
 
-        public async Task Create(Order card)
+        public async Task Create(Order order)
         {
-            using (var transaction = _unitOfWork.BeginTransaction())
+            await _errorWrapper.ExecuteAsync(async () =>
             {
-                try
-                {
-                    await _unitOfWork.OrderRepository.Create(card);
+                order.OpenPrice = BitcoinSimulatorService.BitcoinValue;
 
-                    await transaction.CommitAsync();
+                await _unitOfWork.OrderRepository.Create(order);
 
-                    _logger.LogInformation($"New card with id: {card.Id} was creared.");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogCritical($"Exception while creating new card. {ex.Message}");
-                    await transaction.RollbackAsync();
-                    throw;
-                }
-            }
+                _logger.LogInformation(LogMessages.OnEntityCreatingLog(order.Id, _entityName));
+            },
+            _unitOfWork,
+            _servicName,
+            LogMessages.OnEntityCreatingErrorLog(_entityName));
         }
 
-        public async Task Update(int id, Order updatedCard)
+        public async Task Update(int id, Order updatedOrder)
         {
-            using (var transaction = _unitOfWork.BeginTransaction())
+            await _errorWrapper.ExecuteAsync(async () =>
             {
-                try
+                var order = await _unitOfWork.OrderRepository.Get(id);
+                if (order.Status)
                 {
-                    await _unitOfWork.OrderRepository.Update(id, updatedCard);
-
-                    await transaction.CommitAsync();
-
-                    _logger.LogInformation($"Card with id: {updatedCard.Id} was updated.");
+                    _logger.LogInformation(LogMessages.OnUpdatingClosedOrderLog(id));
                 }
-                catch (Exception ex)
+                else
                 {
-                    _logger.LogCritical($"Exception while updating the card with id: {id}. {ex.Message}");
-                    await transaction.RollbackAsync();
-                    throw;
+                    if (updatedOrder.Status)
+                    {
+                        CalculateProfit(updatedOrder);
+                    }
+                    await _unitOfWork.OrderRepository.Update(id, updatedOrder);
+
+                    _logger.LogInformation(LogMessages.OnEntityUpdatingLog(id, _entityName));
                 }
-            }
+            },
+            _unitOfWork,
+            _servicName,
+            LogMessages.OnEntityUpdatingErrorLog(id, _entityName));
         }
 
         public async Task<Order> Delete(int id)
         {
-            using (var transaction = _unitOfWork.BeginTransaction())
+            return await _errorWrapper.ExecuteAsync(async() =>
             {
-                try
-                {
-                    var deletedCard = await _unitOfWork.OrderRepository.Delete(id);
+                var deletedOrder = await _unitOfWork.OrderRepository.Delete(id);
 
-                    await transaction.CommitAsync();
+                _logger.LogInformation(LogMessages.OnEntityDeletingLog(id, _entityName));
 
-                    _logger.LogInformation($"Card with id: {id} was deleted.");
-
-                    return deletedCard;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogCritical($"Exception while deleting the card with id: {id}. {ex.Message}");
-                    await transaction.RollbackAsync();
-                    throw;
-                }
-            }
+                return deletedOrder;
+            },
+            _unitOfWork,
+            _servicName,
+            LogMessages.OnEntityDeletingErrorLog(id, _entityName));
         }
 
         public bool IsUserOrderOwner(int userId, int orderId)
         {
             return _unitOfWork.OrderRepository.IsUserOrderOwner(userId, orderId);
+        }
+
+        private void CalculateProfit(Order order)
+        {
+            order.ClosePrice = BitcoinSimulatorService.BitcoinValue;
+
+            var buyProfit = (order.ClosePrice - order.OpenPrice) * order.Volume;
+
+            if (order.Type)  //buy
+                order.Profit = buyProfit;
+            else //sell
+                order.Profit = -buyProfit;
         }
     }
 }
