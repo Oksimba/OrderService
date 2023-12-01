@@ -37,6 +37,8 @@ builder.Services.AddScoped<UnitOfWork>();
 
 builder.Services.AddScoped<IDbInitializeService, DbInitializeService>();
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
+
+builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<MustBeOrderOwnerFilter>();
 builder.Services.AddScoped<MustBeOrderListOwnerFilter>();
 builder.Services.AddScoped<ServiceErrorWrapper>();
